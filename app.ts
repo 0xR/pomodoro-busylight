@@ -39,6 +39,14 @@ function createOnDone(transitions: string[]) {
   }));
 }
 
+function askToStop(onStop: () => void) {
+  prompts({
+    type: 'confirm',
+    message: 'Stop current session?',
+    name: 'stop',
+  }).then(({ stop }) => (stop ? onStop() : askToStop(onStop)));
+}
+
 function createTimerState({
   getDuration,
   target,
@@ -55,6 +63,8 @@ function createTimerState({
           cb('TICK');
         }, 1000);
 
+        askToStop(() => cb('STOP'));
+
         return () => {
           clearInterval(interval);
         };
@@ -67,10 +77,12 @@ function createTimerState({
           const { startTime } = context;
           const duration = getDuration(context);
           return (
-            !!startTime && (Date.now() - startTime.getTime()) / MINUTE >= duration
+            !!startTime &&
+            (Date.now() - startTime.getTime()) / MINUTE >= duration
           );
         },
       },
+      STOP: 'idle',
     },
     entry: 'setStartTime',
     activities: activity,
