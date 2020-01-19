@@ -4,7 +4,9 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "dev": "nodemon -e ts,js,json -x ts-node app",
+    "dev": "sudo nodemon -e ts,js,json -x ts-node app",
+    "build": "tsc",
+    "start": "sudo node dist/app.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
