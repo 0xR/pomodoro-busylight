@@ -16,7 +16,7 @@ interface PomodoroContext {
   startTime?: Date;
 }
 
-const idleTransitions = ['work', 'break'];
+const idleTransitions = ['work', 'break', 'exit'];
 
 function createPrompt(transitions: string[]) {
   return () =>
@@ -89,7 +89,7 @@ function createTimerState({
   };
 }
 
-const debug = true;
+const debug = process.env.npm_lifecyle_event === 'dev';
 
 const MINUTE = debug ? 1000 : 1000 * 60;
 
@@ -133,6 +133,9 @@ const machine = Machine<PomodoroContext, EventObject>(
           onDone: createOnDone(breakFinishedPrompts),
         },
         activities: 'setReadyForWorkLight',
+      },
+      exit: {
+        type: 'final',
       },
     },
   },
@@ -180,4 +183,6 @@ const machine = Machine<PomodoroContext, EventObject>(
       .onDone(resolve)
       .start();
   });
+  // TODO: Figure out a better way:
+  process.exit()
 })();
