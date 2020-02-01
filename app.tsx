@@ -3,6 +3,9 @@ import { get as getBusylight } from 'busylight';
 import { assign, EventObject, interpret, Machine, Sender } from 'xstate';
 import prompts from 'prompts';
 import { DoneInvokeEvent, TransitionConfig } from 'xstate/lib/types';
+import React from 'react';
+import { render } from 'ink';
+import SelectInput, { Item } from 'ink-select-input';
 
 const busylight = getBusylight();
 
@@ -19,32 +22,52 @@ interface PomodoroContext {
 const idleTransitions = ['work', 'break', 'exit'];
 
 function createPrompt(transitions: string[]) {
-  return () =>
-    prompts({
-      type: 'select',
-      name: 'answer',
-      message: 'What to do?',
-      choices: transitions.map(transition => ({
-        title: `Go to ${transition}`,
-        value: transition,
-      })),
+  return () => {
+    let resolve: ((value: string) => void) | null = null;
+
+    render(
+      <SelectInput
+        items={transitions.map(transition => ({
+          label: `Go to ${transition}`,
+          value: transition,
+        }))}
+        onSelect={(item: Item) => {
+          if (resolve) {
+            resolve(item.value as string);
+          }
+        }}
+      />,
+    );
+
+    return new Promise(_resolve => {
+      resolve = _resolve;
     });
+  };
 }
 
 function createOnDone(transitions: string[]) {
   return transitions.map(transition => ({
     target: transition,
-    cond: (context: any, event: DoneInvokeEvent<{ answer: string }>) =>
-      event.data.answer === transition,
+    cond: (context: any, event: DoneInvokeEvent<string>) => {
+      return event.data === transition;
+    },
   }));
 }
 
 function askToStop(onStop: () => void) {
-  prompts({
-    type: 'confirm',
-    message: 'Stop current session?',
-    name: 'stop',
-  }).then(({ stop }) => (stop ? onStop() : askToStop(onStop)));
+  render(
+    <SelectInput
+      items={[
+        {
+          label: 'Stop current session',
+          value: 'stop',
+        },
+      ]}
+      onSelect={(item: Item) => {
+        onStop();
+      }}
+    />,
+  );
 }
 
 function createTimerState({
@@ -184,5 +207,5 @@ const machine = Machine<PomodoroContext, EventObject>(
       .start();
   });
   // TODO: Figure out a better way:
-  process.exit()
+  process.exit();
 })();
