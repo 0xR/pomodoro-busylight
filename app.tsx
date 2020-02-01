@@ -1,11 +1,11 @@
 // @ts-ignore
 import { get as getBusylight } from 'busylight';
 import { assign, EventObject, interpret, Machine, Sender } from 'xstate';
-import prompts from 'prompts';
-import { DoneInvokeEvent, TransitionConfig } from 'xstate/lib/types';
-import React from 'react';
-import { render } from 'ink';
+import { DoneInvokeEvent } from 'xstate/lib/types';
+import { useMachine } from '@xstate/react';
+import { render, Text } from 'ink';
 import SelectInput, { Item } from 'ink-select-input';
+import React, { useEffect } from 'react';
 
 const busylight = getBusylight();
 
@@ -54,22 +54,6 @@ function createOnDone(transitions: string[]) {
   }));
 }
 
-function askToStop(onStop: () => void) {
-  render(
-    <SelectInput
-      items={[
-        {
-          label: 'Stop current session',
-          value: 'stop',
-        },
-      ]}
-      onSelect={(item: Item) => {
-        onStop();
-      }}
-    />,
-  );
-}
-
 function createTimerState({
   getDuration,
   target,
@@ -85,8 +69,6 @@ function createTimerState({
         const interval = setInterval(() => {
           cb('TICK');
         }, 1000);
-
-        askToStop(() => cb('STOP'));
 
         return () => {
           clearInterval(interval);
@@ -127,9 +109,10 @@ const machine = Machine<PomodoroContext, EventObject>(
     context: { workDuration: debug ? 5 : 25, breakDuration: 5 },
     states: {
       idle: {
-        invoke: {
-          src: createPrompt(idleTransitions),
-          onDone: createOnDone(idleTransitions),
+        on: {
+          WORK: 'work',
+          BREAK: 'break',
+          EXIT: 'exit',
         },
         activities: 'setIdleLight',
       },
@@ -193,19 +176,31 @@ const machine = Machine<PomodoroContext, EventObject>(
   },
 );
 
-(async () => {
-  await new Promise(resolve => {
-    interpret(machine, {
-      execute: true,
-    })
-      .onTransition((state, event) => {
-        if (debug) {
-          console.log('onTransition', state.value, event, state.context);
-        }
-      })
-      .onDone(resolve)
-      .start();
-  });
-  // TODO: Figure out a better way:
-  process.exit();
-})();
+const PomodoroTimer = () => {
+  const [current, send] = useMachine(machine);
+  useEffect(() => {
+    if (current.value === 'exit') {
+      unmount();
+    }
+  }, [current.value]);
+  return (
+    <>
+      <Text>Current state: {current.value}</Text>
+      <SelectInput
+        items={current.nextEvents
+          .filter(eventType => eventType !== 'TICK')
+          .map(eventType => ({
+            label: `Go to ${eventType}`,
+            value: eventType,
+          }))}
+        onSelect={(item: Item) => {
+          send({
+            type: item.value.toString(),
+          });
+        }}
+      />
+    </>
+  );
+};
+
+const { unmount } = render(<PomodoroTimer />);
