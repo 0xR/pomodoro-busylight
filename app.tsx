@@ -1,11 +1,12 @@
 // @ts-ignore
 import { get as getBusylight } from 'busylight';
-import { assign, EventObject, interpret, Machine, Sender } from 'xstate';
-import { DoneInvokeEvent } from 'xstate/lib/types';
+import { assign, EventObject, Machine } from 'xstate';
 import { useMachine } from '@xstate/react';
-import { render, Text } from 'ink';
+import { Box, render, Text } from 'ink';
 import SelectInput, { Item } from 'ink-select-input';
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
+// @ts-ignore
+import ProgressBar from 'ink-progress-bar';
 
 const busylight = getBusylight();
 
@@ -19,87 +20,10 @@ interface PomodoroContext {
   startTime?: Date;
 }
 
-const idleTransitions = ['work', 'break', 'exit'];
-
-function createPrompt(transitions: string[]) {
-  return () => {
-    let resolve: ((value: string) => void) | null = null;
-
-    render(
-      <SelectInput
-        items={transitions.map(transition => ({
-          label: `Go to ${transition}`,
-          value: transition,
-        }))}
-        onSelect={(item: Item) => {
-          if (resolve) {
-            resolve(item.value as string);
-          }
-        }}
-      />,
-    );
-
-    return new Promise(_resolve => {
-      resolve = _resolve;
-    });
-  };
-}
-
-function createOnDone(transitions: string[]) {
-  return transitions.map(transition => ({
-    target: transition,
-    cond: (context: any, event: DoneInvokeEvent<string>) => {
-      return event.data === transition;
-    },
-  }));
-}
-
-function createTimerState({
-  getDuration,
-  target,
-  activity,
-}: {
-  getDuration: (contest: PomodoroContext) => number;
-  target: string;
-  activity: string;
-}) {
-  return {
-    invoke: {
-      src: () => (cb: Sender<any>) => {
-        const interval = setInterval(() => {
-          cb('TICK');
-        }, 1000);
-
-        return () => {
-          clearInterval(interval);
-        };
-      },
-    },
-    on: {
-      TICK: {
-        target,
-        cond: (context: PomodoroContext) => {
-          const { startTime } = context;
-          const duration = getDuration(context);
-          return (
-            !!startTime &&
-            (Date.now() - startTime.getTime()) / MINUTE >= duration
-          );
-        },
-      },
-      STOP: 'idle',
-    },
-    entry: 'setStartTime',
-    activities: activity,
-  };
-}
-
 const debug = process.env.npm_lifecyle_event === 'dev';
 
-const MINUTE = debug ? 1000 : 1000 * 60;
-
-const workFinishedPrompts = ['break', 'idle'];
-const breakFinishedPrompts = ['work', 'idle'];
+const SECOND = 1000;
+const MINUTE = debug ? SECOND : SECOND * 60;
 
 const machine = Machine<PomodoroContext, EventObject>(
   {
@@ -116,27 +40,33 @@ const machine = Machine<PomodoroContext, EventObject>(
         },
         activities: 'setIdleLight',
       },
-      work: createTimerState({
-        getDuration: ({ workDuration }) => workDuration,
-        target: 'workFinished',
-        activity: 'setBusylight',
-      }),
+      work: {
+        on: {
+          FINISHED: 'workFinished',
+          STOP: 'idle',
+        },
+        entry: 'setStartTime',
+        activities: 'setBusylight',
+      },
       workFinished: {
-        invoke: {
-          src: createPrompt(workFinishedPrompts),
-          onDone: createOnDone(workFinishedPrompts),
+        on: {
+          BREAK: 'break',
+          STOP: 'idle',
         },
         activities: 'setReadyForBreakLight',
       },
-      break: createTimerState({
-        getDuration: ({ breakDuration }) => breakDuration,
-        target: 'breakFinished',
-        activity: 'setBreaklight',
-      }),
+      break: {
+        on: {
+          FINISHED: 'workFinished',
+          STOP: 'idle',
+        },
+        entry: 'setStartTime',
+        activities: 'setBreaklight',
+      },
       breakFinished: {
-        invoke: {
-          src: createPrompt(breakFinishedPrompts),
-          onDone: createOnDone(breakFinishedPrompts),
+        on: {
+          WORK: 'work',
+          STOP: 'idle',
         },
         activities: 'setReadyForWorkLight',
       },
@@ -176,19 +106,99 @@ const machine = Machine<PomodoroContext, EventObject>(
   },
 );
 
-const PomodoroTimer = () => {
-  const [current, send] = useMachine(machine);
+const useTime = () => {
+  const [time, setTime] = useState<number>(Date.now());
   useEffect(() => {
-    if (current.value === 'exit') {
+    const interval = setInterval(() => {
+      setTime(Date.now());
+    }, 100);
+
+    return () => {
+      clearInterval(interval);
+    };
+  }, []);
+  return time;
+};
+
+function getProgress({
+  state,
+  context: { workDuration, breakDuration, startTime },
+  currentTime,
+}: {
+  state: string;
+  context: PomodoroContext;
+  currentTime: number;
+}) {
+  if (state === 'work' || state === 'break') {
+    const duration = state === 'work' ? workDuration : breakDuration;
+    if (startTime) {
+      const difference = Math.max(currentTime - startTime.getTime(), 0);
+      const minutesPassed = difference / MINUTE;
+      return {
+        millis: difference,
+        percent: minutesPassed / duration,
+      };
+    }
+  } else {
+    return undefined;
+  }
+}
+
+function pad(num: number, size: number) {
+  var s = '000000000' + num;
+  return s.substr(s.length - size);
+}
+
+function formatMillis(millis: number) {
+  return `${pad(Math.floor(millis / MINUTE), 2)}:${pad(
+    Math.round((millis % MINUTE) / SECOND),
+    2,
+  )}`;
+}
+
+const PomodoroTimer = () => {
+  const currentTime = useTime();
+  const [currentState, send] = useMachine(machine);
+  const { context, nextEvents } = currentState;
+
+  const state = currentState.value.toString();
+
+  useEffect(() => {
+    if (state === 'exit') {
       unmount();
     }
-  }, [current.value]);
+  }, [state]);
+
+  const progress = getProgress({
+    state,
+    context,
+    currentTime,
+  });
+
+  useEffect(() => {
+    if (progress && progress.percent >= 1) {
+      send({
+        type: 'FINISHED',
+      });
+    }
+  }, [progress]);
+
+  const timePassedText = progress ? formatMillis(progress.millis) : '';
   return (
     <>
-      <Text>Current state: {current.value}</Text>
+      <Text>Current state: {state}</Text>
+      {progress && (
+        <Box>
+          <Box marginRight={1}>{timePassedText}</Box>
+          <ProgressBar
+            left={timePassedText.length + 1}
+            percent={progress?.percent}
+          />
+        </Box>
+      )}
       <SelectInput
-        items={current.nextEvents
-          .filter(eventType => eventType !== 'TICK')
+        items={nextEvents
+          .filter(eventType => eventType !== 'FINISHED')
           .map(eventType => ({
             label: `Go to ${eventType}`,
             value: eventType,
