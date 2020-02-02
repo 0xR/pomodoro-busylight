@@ -29,6 +29,7 @@
   },
   "dependencies": {
     "@xstate/react": "^0.8.1",
+    "ink-big-text": "^1.0.1",
     "ink-progress-bar": "^3.0.0"
   }
 }

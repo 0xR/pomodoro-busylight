@@ -2,16 +2,19 @@
 import { get as getBusylight } from 'busylight';
 import { assign, EventObject, Machine } from 'xstate';
 import { useMachine } from '@xstate/react';
-import { Box, render, Text } from 'ink';
+import { Box, Color, render, Text } from 'ink';
 import SelectInput, { Item } from 'ink-select-input';
 import React, { useEffect, useState } from 'react';
 // @ts-ignore
 import ProgressBar from 'ink-progress-bar';
+// @ts-ignore
+import BigText from 'ink-big-text';
 
 const busylight = getBusylight();
 
+const blinkingRate = 500;
 busylight.defaults({
-  rate: 500,
+  rate: blinkingRate,
 });
 
 interface PomodoroContext {
@@ -24,6 +27,9 @@ const debug = process.env.npm_lifecyle_event === 'dev';
 
 const SECOND = 1000;
 const MINUTE = debug ? SECOND : SECOND * 60;
+const workColor = 'red';
+const breakColor = 'green';
+const idleColor = 'orange';
 
 const machine = Machine<PomodoroContext, EventObject>(
   {
@@ -78,23 +84,23 @@ const machine = Machine<PomodoroContext, EventObject>(
   {
     activities: {
       setIdleLight: () => {
-        busylight.pulse('orange');
+        busylight.pulse(idleColor);
         return () => busylight.off();
       },
       setReadyForWorkLight: () => {
-        busylight.pulse('red');
+        busylight.pulse(workColor);
         return () => busylight.off();
       },
       setBusylight: () => {
-        busylight.light('red');
+        busylight.light(workColor);
         return () => busylight.off();
       },
       setReadyForBreakLight: () => {
-        busylight.pulse('green');
+        busylight.pulse(breakColor);
         return () => busylight.off();
       },
       setBreaklight: () => {
-        busylight.light('green');
+        busylight.light(breakColor);
         return () => busylight.off();
       },
     },
@@ -135,8 +141,8 @@ function getProgress({
       const difference = Math.max(currentTime - startTime.getTime(), 0);
       const minutesPassed = difference / MINUTE;
       return {
-        millis: difference,
-        percent: minutesPassed / duration,
+        millis: duration * MINUTE - difference,
+        percent: 1 - minutesPassed / duration,
       };
     }
   } else {
@@ -151,10 +157,43 @@ function pad(num: number, size: number) {
 
 function formatMillis(millis: number) {
   return `${pad(Math.floor(millis / MINUTE), 2)}:${pad(
-    Math.round((millis % MINUTE) / SECOND),
+    Math.floor((millis % MINUTE) / SECOND),
     2,
   )}`;
 }
+
+const Header = ({
+  currentTime,
+  mode,
+  color,
+}: {
+  currentTime: number;
+  mode: 'blinking' | 'progress';
+  color: string;
+}) => {
+  const texts = ['PO', 'MO', 'DO', 'RO'];
+  const rateCount = Math.round(currentTime / (2 * blinkingRate));
+  const highlightColor = 'white';
+  const colors =
+    mode === 'blinking'
+      ? rateCount % 2
+        ? Array(texts.length).fill(highlightColor)
+        : Array(texts.length).fill(color)
+      : texts.map((text, i) => {
+          return rateCount % texts.length === i ? highlightColor : color;
+        });
+  return (
+    <Box>
+      {texts.map((text, i) => (
+        <Box key={i} marginLeft={i && -1}>
+          <Color keyword={colors[i]}>
+            <BigText text={text} />
+          </Color>
+        </Box>
+      ))}
+    </Box>
+  );
+};
 
 const PomodoroTimer = () => {
   const currentTime = useTime();
@@ -176,7 +215,7 @@ const PomodoroTimer = () => {
   });
 
   useEffect(() => {
-    if (progress && progress.percent >= 1) {
+    if (progress && progress.percent <= 0) {
       send({
         type: 'FINISHED',
       });
@@ -186,15 +225,27 @@ const PomodoroTimer = () => {
   const timePassedText = progress ? formatMillis(progress.millis) : '';
   return (
     <>
-      <Text>Current state: {state}</Text>
+      <Header
+        currentTime={currentTime}
+        mode={state === 'work' || state === 'break' ? 'progress' : 'blinking'}
+        color={
+          state === 'work' || state === 'breakFinished'
+            ? workColor
+            : state === 'break' || state === 'workFinished'
+            ? breakColor
+            : idleColor
+        }
+      />
       {progress && (
-        <Box>
-          <Box marginRight={1}>{timePassedText}</Box>
-          <ProgressBar
-            left={timePassedText.length + 1}
-            percent={progress?.percent}
-          />
-        </Box>
+        <Color keyword={state === 'work' ? workColor : breakColor}>
+          <Box>
+            <Box marginRight={1}>{timePassedText}</Box>
+            <ProgressBar
+              left={timePassedText.length + 1}
+              percent={progress?.percent}
+            />
+          </Box>
+        </Color>
       )}
       <SelectInput
         items={nextEvents
