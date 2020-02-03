@@ -63,7 +63,7 @@ const machine = Machine<PomodoroContext, EventObject>(
       },
       break: {
         on: {
-          FINISHED: 'workFinished',
+          FINISHED: 'breakFinished',
           STOP: 'idle',
         },
         entry: 'setStartTime',
