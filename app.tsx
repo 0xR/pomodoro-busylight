@@ -138,11 +138,11 @@ function getProgress({
   if (state === 'work' || state === 'break') {
     const duration = state === 'work' ? workDuration : breakDuration;
     if (startTime) {
-      const difference = Math.max(currentTime - startTime.getTime(), 0);
+      const difference = currentTime - startTime.getTime();
       const minutesPassed = difference / MINUTE;
       return {
         millis: duration * MINUTE - difference,
-        percent: 1 - minutesPassed / duration,
+        percent: Math.max(1 - minutesPassed / duration, 0),
       };
     }
   } else {
