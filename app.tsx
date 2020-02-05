@@ -9,6 +9,8 @@ import React, { useEffect, useState } from 'react';
 import ProgressBar from 'ink-progress-bar';
 // @ts-ignore
 import BigText from 'ink-big-text';
+// @ts-ignore
+import { UncontrolledTextInput } from 'ink-text-input';
 
 const busylight = getBusylight();
 
@@ -29,6 +31,7 @@ const SECOND = 1000;
 const MINUTE = debug ? SECOND : SECOND * 60;
 const workColor = 'red';
 const breakColor = 'green';
+const meetingColor = 'blue';
 const idleColor = 'orange';
 
 const machine = Machine<PomodoroContext, EventObject>(
@@ -42,6 +45,8 @@ const machine = Machine<PomodoroContext, EventObject>(
         on: {
           WORK: 'work',
           BREAK: 'break',
+          CONFIGMEETINGS: 'configMeetings',
+          MEETING: 'meeting',
           EXIT: 'exit',
         },
         activities: 'setIdleLight',
@@ -50,6 +55,7 @@ const machine = Machine<PomodoroContext, EventObject>(
         on: {
           FINISHED: 'workFinished',
           STOP: 'idle',
+          MEETING: 'meeting',
         },
         entry: 'setStartTime',
         activities: 'setBusylight',
@@ -58,6 +64,7 @@ const machine = Machine<PomodoroContext, EventObject>(
         on: {
           BREAK: 'break',
           STOP: 'idle',
+          MEETING: 'meeting',
         },
         activities: 'setReadyForBreakLight',
       },
@@ -65,6 +72,7 @@ const machine = Machine<PomodoroContext, EventObject>(
         on: {
           FINISHED: 'breakFinished',
           STOP: 'idle',
+          MEETING: 'meeting',
         },
         entry: 'setStartTime',
         activities: 'setBreaklight',
@@ -73,8 +81,21 @@ const machine = Machine<PomodoroContext, EventObject>(
         on: {
           WORK: 'work',
           STOP: 'idle',
+          MEETING: 'meeting',
         },
         activities: 'setReadyForWorkLight',
+      },
+      configMeetings: {
+        on: {
+          STOP: 'idle',
+        },
+        activities: 'setConfigMeetingLight',
+      },
+      meeting: {
+        on: {
+          STOP: 'idle',
+        },
+        activities: 'setMeetingLight',
       },
       exit: {
         type: 'final',
@@ -97,6 +118,14 @@ const machine = Machine<PomodoroContext, EventObject>(
       },
       setReadyForBreakLight: () => {
         busylight.pulse(breakColor);
+        return () => busylight.off();
+      },
+      setConfigMeetingLight: () => {
+        busylight.pulse(meetingColor);
+        return () => busylight.off();
+      },
+      setMeetingLight: () => {
+        busylight.light(meetingColor);
         return () => busylight.off();
       },
       setBreaklight: () => {
@@ -195,6 +224,133 @@ const Header = ({
   );
 };
 
+const useMeetings = ({
+  meetings,
+  onChangeMeetings,
+}: {
+  meetings: Meeting[];
+  onChangeMeetings: (meetings: Meeting[]) => void;
+}) => {
+  const [error, setError] = useState<string>('');
+  return {
+    error,
+    addMeeting(input: string) {
+      const parsed = parseInt(input, 10);
+      if (!parsed) {
+        setError(`Not a number "${input}"`);
+        return;
+      }
+      const hours = Math.floor(parsed / 100);
+      const min = parsed % 100;
+      if (0 > hours || hours > 23) {
+        setError(`Invalid hour "${input}"`);
+        return;
+      }
+      if (0 > min || min > 59) {
+        setError(`Invalid minute "${input}"`);
+        return;
+      }
+      setError('');
+      const meetingDate = new Date();
+      meetingDate.setHours(hours, min, 0, 0);
+      const newMeeting = meetingDate.getTime();
+      if (newMeeting <= Date.now()) {
+        setError(`In the passed: "${input}"`);
+        return;
+      }
+      const result = [...meetings, newMeeting];
+      result.sort();
+      onChangeMeetings(result);
+    },
+    removeMeeting(toRemove: Meeting) {
+      onChangeMeetings(meetings.filter(meeting => meeting != toRemove));
+    },
+  };
+};
+
+type Meeting = number;
+
+const ConfigMeetings = ({
+  meetings,
+  onChangeMeetings,
+  onDone,
+}: {
+  meetings: Meeting[];
+  onChangeMeetings: (meetings: Meeting[]) => void;
+  onDone: () => void;
+}) => {
+  const [state, setState] = useState<'home' | 'add' | 'remove'>('home');
+  const { error, addMeeting, removeMeeting } = useMeetings({
+    meetings,
+    onChangeMeetings,
+  });
+
+  return (
+    <>
+      {error && <Text>{error}</Text>}
+      {state === 'home' ? (
+        <SelectInput
+          items={[
+            {
+              label: 'Add meeting',
+              value: 'add',
+            },
+            {
+              label: 'remove',
+              value: 'remove',
+            },
+            {
+              label: 'exit',
+              value: 'exit',
+            },
+          ]}
+          onSelect={(item: Item) => {
+            if (item.value === 'add') {
+              setState('add');
+            }
+            if (item.value === 'remove') {
+              setState('remove');
+            }
+            if (item.value === 'exit') {
+              onDone();
+            }
+          }}
+        />
+      ) : state === 'remove' ? (
+        <SelectInput
+          items={[
+            ...meetings.map(meeting => ({
+              label: meeting.toString(),
+              value: meeting,
+            })),
+            {
+              label: 'Back',
+              value: 'back',
+            },
+          ]}
+          onSelect={(item: Item) => {
+            if (item.value === 'back') {
+              setState('home');
+            } else {
+              removeMeeting(item.value as number);
+            }
+          }}
+        />
+      ) : (
+        <Box>
+          <Box marginRight={1}>Enter meeting time:</Box>
+          <UncontrolledTextInput
+            onSubmit={value => {
+              addMeeting(value);
+              setState('home');
+            }}
+          />
+        </Box>
+      )}
+    </>
+  );
+};
+
 const PomodoroTimer = () => {
   const currentTime = useTime();
   const [currentState, send] = useMachine(machine);
@@ -214,6 +370,8 @@ const PomodoroTimer = () => {
     currentTime,
   });
 
+  const [meetings, setMeetings] = useState<Meeting[]>([]);
+
   useEffect(() => {
     if (progress && progress.percent <= 0) {
       send({
@@ -222,44 +380,79 @@ const PomodoroTimer = () => {
     }
   }, [progress]);
 
+  useEffect(() => {
+    if (currentTime > meetings[0]) {
+      setMeetings(meetings.slice(1));
+      send({
+        type: 'MEETING',
+      });
+    }
+  }, [currentTime, meetings[0]]);
+
   const timePassedText = progress ? formatMillis(progress.millis) : '';
   return (
     <>
       <Header
         currentTime={currentTime}
-        mode={state === 'work' || state === 'break' ? 'progress' : 'blinking'}
+        mode={
+          state === 'work' || state === 'break' || state === 'meeting'
+            ? 'progress'
+            : 'blinking'
+        }
         color={
           state === 'work' || state === 'breakFinished'
             ? workColor
             : state === 'break' || state === 'workFinished'
             ? breakColor
+            : state === 'meeting' || state === 'configMeetings'
+            ? meetingColor
             : idleColor
         }
       />
-      {progress && (
-        <Color keyword={state === 'work' ? workColor : breakColor}>
-          <Box>
-            <Box marginRight={1}>{timePassedText}</Box>
-            <ProgressBar
-              left={timePassedText.length + 1}
-              percent={progress?.percent}
-            />
-          </Box>
-        </Color>
+      <Text>
+        Meetings: {JSON.stringify(meetings)} {currentTime}
+      </Text>
+      {state === 'configMeetings' ? (
+        <ConfigMeetings
+          meetings={meetings}
+          onChangeMeetings={meetings => {
+            setMeetings(meetings);
+          }}
+          onDone={() => {
+            send({
+              type: 'STOP',
+            });
+          }}
+        />
+      ) : (
+        <>
+          {progress && (
+            <Color keyword={state === 'work' ? workColor : breakColor}>
+              <Box>
+                <Box marginRight={1}>{timePassedText}</Box>
+                <ProgressBar
+                  left={timePassedText.length + 1}
+                  percent={progress?.percent}
+                />
+              </Box>
+            </Color>
+          )}
+          <SelectInput
+            items={nextEvents
+              .filter(eventType => eventType !== 'FINISHED')
+              .filter(eventType => eventType !== 'MEETING')
+              .map(eventType => ({
+                label: `Go to ${eventType}`,
+                value: eventType,
+              }))}
+            onSelect={(item: Item) => {
+              send({
+                type: item.value.toString(),
+              });
+            }}
+          />
+        </>
       )}
-      <SelectInput
-        items={nextEvents
-          .filter(eventType => eventType !== 'FINISHED')
-          .map(eventType => ({
-            label: `Go to ${eventType}`,
-            value: eventType,
-          }))}
-        onSelect={(item: Item) => {
-          send({
-            type: item.value.toString(),
-          });
-        }}
-      />
     </>
   );
 };
