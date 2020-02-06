@@ -180,6 +180,9 @@ function getProgress({
 }
 
 function pad(num: number, size: number) {
+  if (num >= 10 ** size) {
+    return num;
+  }
   var s = '000000000' + num;
   return s.substr(s.length - size);
 }
@@ -189,6 +192,23 @@ function formatMillis(millis: number) {
     Math.floor((millis % MINUTE) / SECOND),
     2,
   )}`;
+}
+
+function formatTime(date: Date) {
+  return `${date.getHours()}:${date.getMinutes()}`;
+}
+
+function formatMeetings(meetings: Meeting[], currentTime: number) {
+  const formattedMeetings = meetings.map(m => {
+    const meetingDate = new Date(m);
+    return `${formatMillis(m - currentTime)} (${formatTime(meetingDate)})`;
+  });
+
+  const currentDate = new Date(currentTime);
+
+  return `Meetings: ${
+    meetings.length ? formattedMeetings.join(', ') : 'none'
+  } - Time: ${formatTime(currentDate)}`;
 }
 
 const Header = ({
@@ -409,9 +429,7 @@ const PomodoroTimer = () => {
             : idleColor
         }
       />
-      <Text>
-        Meetings: {JSON.stringify(meetings)} {currentTime}
-      </Text>
+      <Text>{formatMeetings(meetings, currentTime)}</Text>
       {state === 'configMeetings' ? (
         <ConfigMeetings
           meetings={meetings}
