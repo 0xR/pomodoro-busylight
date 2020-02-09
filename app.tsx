@@ -1,3 +1,4 @@
+import fs from 'fs-extra';
 // @ts-ignore
 import { get as getBusylight } from 'busylight';
 import { assign, EventObject, Machine } from 'xstate';
@@ -198,7 +199,11 @@ function formatTime(date: Date) {
   return `${date.getHours()}:${date.getMinutes()}`;
 }
 
-function formatMeetings(meetings: Meeting[], currentTime: number) {
+function formatMeetings(
+  meetings: Meeting[],
+  currentTime: number,
+  meetingError: Error | undefined,
+) {
   const formattedMeetings = meetings.map(m => {
     const meetingDate = new Date(m);
     return `${formatMillis(m - currentTime)} (${formatTime(meetingDate)})`;
@@ -208,7 +213,9 @@ function formatMeetings(meetings: Meeting[], currentTime: number) {
 
   return `Meetings: ${
     meetings.length ? formattedMeetings.join(', ') : 'none'
-  } - Time: ${formatTime(currentDate)}`;
+  } - Time: ${formatTime(currentDate)}${
+    meetingError ? ' ' + meetingError.toString() : ''
+  }`;
 }
 
 const Header = ({
@@ -243,6 +250,35 @@ const Header = ({
     </Box>
   );
 };
+
+function usePersistedState<T>(
+  initialState: T,
+  path: string,
+): [T, (state: T) => void, Error | undefined] {
+  const [state, setState] = useState(initialState);
+  const [error, setError] = useState<Error | undefined>(undefined);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const storedState = await fs.readJSON(path);
+        setState(storedState);
+      } catch (e) {
+        setError(e);
+      }
+    })();
+  }, []);
+  async function storeState(newState: T) {
+    setState(newState);
+    try {
+      await fs.writeJSON(path, newState);
+    } catch (e) {
+      setError(e);
+    }
+  }
+
+  return [state, storeState, error];
+}
 
 const useMeetings = ({
   meetings,
@@ -390,7 +426,10 @@ const PomodoroTimer = () => {
     currentTime,
   });
 
-  const [meetings, setMeetings] = useState<Meeting[]>([]);
+  const [meetings, setMeetings, meetingError] = usePersistedState<Meeting[]>(
+    [],
+    `${process.env.HOME}/.pomodoro.json`,
+  );
 
   useEffect(() => {
     if (progress && progress.percent <= 0) {
@@ -429,7 +468,7 @@ const PomodoroTimer = () => {
             : idleColor
         }
       />
-      <Text>{formatMeetings(meetings, currentTime)}</Text>
+      <Text>{formatMeetings(meetings, currentTime, meetingError)}</Text>
       {state === 'configMeetings' ? (
         <ConfigMeetings
           meetings={meetings}
