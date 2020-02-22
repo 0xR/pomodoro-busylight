@@ -12,6 +12,7 @@ import ProgressBar from 'ink-progress-bar';
 import BigText from 'ink-big-text';
 // @ts-ignore
 import { UncontrolledTextInput } from 'ink-text-input';
+import { formatMillis, formatTime, getProgress, PomodoroContext } from "./lib";
 
 const busylight = getBusylight();
 
@@ -20,16 +21,8 @@ busylight.defaults({
   rate: blinkingRate,
 });
 
-interface PomodoroContext {
-  workDuration: number;
-  breakDuration: number;
-  startTime?: Date;
-}
-
 const debug = process.env.npm_lifecyle_event === 'dev';
 
-const SECOND = 1000;
-const MINUTE = debug ? SECOND : SECOND * 60;
 const workColor = 'red';
 const breakColor = 'green';
 const meetingColor = 'blue';
@@ -155,49 +148,6 @@ const useTime = () => {
   }, []);
   return time;
 };
-
-function getProgress({
-  state,
-  context: { workDuration, breakDuration, startTime },
-  currentTime,
-}: {
-  state: string;
-  context: PomodoroContext;
-  currentTime: number;
-}) {
-  if (state === 'work' || state === 'break') {
-    const duration = state === 'work' ? workDuration : breakDuration;
-    if (startTime) {
-      const difference = currentTime - startTime.getTime();
-      const minutesPassed = difference / MINUTE;
-      return {
-        millis: duration * MINUTE - difference,
-        percent: Math.max(1 - minutesPassed / duration, 0),
-      };
-    }
-  } else {
-    return undefined;
-  }
-}
-
-function pad(num: number, size: number) {
-  if (num >= 10 ** size) {
-    return num;
-  }
-  var s = '000000000' + num;
-  return s.substr(s.length - size);
-}
-
-function formatMillis(millis: number) {
-  return `${pad(Math.floor(millis / MINUTE), 2)}:${pad(
-    Math.floor((millis % MINUTE) / SECOND),
-    2,
-  )}`;
-}
-
-function formatTime(date: Date) {
-  return `${date.getHours()}:${date.getMinutes()}`;
-}
 
 function formatMeetings(
   meetings: Meeting[],
