@@ -347,7 +347,7 @@ const ConfigMeetings = ({
         <SelectInput
           items={[
             ...meetings.map(meeting => ({
-              label: meeting.toString(),
+              label: formatTime(new Date(meeting)),
               value: meeting,
             })),
             {
