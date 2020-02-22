@@ -12,7 +12,7 @@ import ProgressBar from 'ink-progress-bar';
 import BigText from 'ink-big-text';
 // @ts-ignore
 import { UncontrolledTextInput } from 'ink-text-input';
-import { formatMillis, formatTime, getProgress, PomodoroContext } from "./lib";
+import { formatMillis, formatTime, getProgress, PomodoroContext } from './lib';
 
 const busylight = getBusylight();
 
@@ -28,7 +28,7 @@ const breakColor = 'green';
 const meetingColor = 'blue';
 const idleColor = 'orange';
 
-const machine = Machine<PomodoroContext, EventObject>(
+const pomodoroMachine = Machine<PomodoroContext, EventObject>(
   {
     id: 'pomodoro',
     initial: 'idle',
@@ -39,8 +39,6 @@ const machine = Machine<PomodoroContext, EventObject>(
         on: {
           WORK: 'work',
           BREAK: 'break',
-          CONFIGMEETINGS: 'configMeetings',
-          MEETING: 'meeting',
           EXIT: 'exit',
         },
         activities: 'setIdleLight',
@@ -49,7 +47,6 @@ const machine = Machine<PomodoroContext, EventObject>(
         on: {
           FINISHED: 'workFinished',
           STOP: 'idle',
-          MEETING: 'meeting',
         },
         entry: 'setStartTime',
         activities: 'setBusylight',
@@ -58,7 +55,6 @@ const machine = Machine<PomodoroContext, EventObject>(
         on: {
           BREAK: 'break',
           STOP: 'idle',
-          MEETING: 'meeting',
         },
         activities: 'setReadyForBreakLight',
       },
@@ -66,7 +62,6 @@ const machine = Machine<PomodoroContext, EventObject>(
         on: {
           FINISHED: 'breakFinished',
           STOP: 'idle',
-          MEETING: 'meeting',
         },
         entry: 'setStartTime',
         activities: 'setBreaklight',
@@ -75,7 +70,6 @@ const machine = Machine<PomodoroContext, EventObject>(
         on: {
           WORK: 'work',
           STOP: 'idle',
-          MEETING: 'meeting',
         },
         activities: 'setReadyForWorkLight',
       },
@@ -84,12 +78,6 @@ const machine = Machine<PomodoroContext, EventObject>(
           STOP: 'idle',
         },
         activities: 'setConfigMeetingLight',
-      },
-      meeting: {
-        on: {
-          STOP: 'idle',
-        },
-        activities: 'setMeetingLight',
       },
       exit: {
         type: 'final',
@@ -114,14 +102,6 @@ const machine = Machine<PomodoroContext, EventObject>(
         busylight.pulse(breakColor);
         return () => busylight.off();
       },
-      setConfigMeetingLight: () => {
-        busylight.pulse(meetingColor);
-        return () => busylight.off();
-      },
-      setMeetingLight: () => {
-        busylight.light(meetingColor);
-        return () => busylight.off();
-      },
       setBreaklight: () => {
         busylight.light(breakColor);
         return () => busylight.off();
@@ -131,6 +111,47 @@ const machine = Machine<PomodoroContext, EventObject>(
       setStartTime: assign({
         startTime: (context, event) => new Date(),
       }),
+    },
+  },
+);
+
+const meetingMachine = Machine<{}, EventObject>(
+  {
+    id: 'meeting',
+    initial: 'idle',
+    strict: true,
+    states: {
+      idle: {
+        on: {
+          CONFIGMEETINGS: 'configMeetings',
+          MEETING: 'meeting',
+        },
+        activities: 'setIdleLight',
+      },
+      configMeetings: {
+        on: {
+          STOP: 'idle',
+        },
+        activities: 'setConfigMeetingLight',
+      },
+      meeting: {
+        on: {
+          STOP: 'idle',
+        },
+        activities: 'setMeetingLight',
+      },
+    },
+  },
+  {
+    activities: {
+      setConfigMeetingLight: () => {
+        busylight.pulse(meetingColor);
+        return () => busylight.off();
+      },
+      setMeetingLight: () => {
+        busylight.light(meetingColor);
+        return () => busylight.off();
+      },
     },
   },
 );
@@ -359,10 +380,14 @@ const ConfigMeetings = ({
 
 const PomodoroTimer = () => {
   const currentTime = useTime();
-  const [currentState, send] = useMachine(machine);
-  const { context, nextEvents } = currentState;
+  const [pomodoroMachineState, sendPomodoro] = useMachine(pomodoroMachine);
+  const [meetingMachineState, sendMeeting] = useMachine(meetingMachine);
+  const { context, nextEvents: pomodoroNextEvents } = pomodoroMachineState;
+  const { nextEvents: meetingNextEvents } = meetingMachineState;
 
-  const state = currentState.value.toString();
+  const nextEvents = [...pomodoroNextEvents, ...meetingNextEvents];
+  const state = pomodoroMachineState.value.toString();
+  const meetingState = meetingMachineState.value.toString();
 
   useEffect(() => {
     if (state === 'exit') {
@@ -383,7 +408,7 @@ const PomodoroTimer = () => {
 
   useEffect(() => {
     if (progress && progress.percent <= 0) {
-      send({
+      sendPomodoro({
         type: 'FINISHED',
       });
     }
@@ -392,7 +417,7 @@ const PomodoroTimer = () => {
   useEffect(() => {
     if (currentTime > meetings[0]) {
       setMeetings(meetings.slice(1));
-      send({
+      sendMeeting({
         type: 'MEETING',
       });
     }
@@ -413,20 +438,20 @@ const PomodoroTimer = () => {
             ? workColor
             : state === 'break' || state === 'workFinished'
             ? breakColor
-            : state === 'meeting' || state === 'configMeetings'
+            : meetingState === 'meeting' || meetingState === 'configMeetings'
             ? meetingColor
             : idleColor
         }
       />
       <Text>{formatMeetings(meetings, currentTime, meetingError)}</Text>
-      {state === 'configMeetings' ? (
+      {meetingState === 'configMeetings' ? (
         <ConfigMeetings
           meetings={meetings}
           onChangeMeetings={meetings => {
             setMeetings(meetings);
           }}
           onDone={() => {
-            send({
+            sendMeeting({
               type: 'STOP',
             });
           }}
@@ -453,9 +478,15 @@ const PomodoroTimer = () => {
                 value: eventType,
               }))}
             onSelect={(item: Item) => {
-              send({
-                type: item.value.toString(),
-              });
+              if (item.value === 'CONFIGMEETINGS') {
+                sendMeeting({
+                  type: item.value.toString(),
+                });
+              } else {
+                sendPomodoro({
+                  type: item.value.toString(),
+                });
+              }
             }}
           />
         </>
