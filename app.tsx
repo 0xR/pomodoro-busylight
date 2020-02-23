@@ -1,11 +1,11 @@
 import fs from 'fs-extra';
 // @ts-ignore
 import { get as getBusylight } from 'busylight';
-import { assign, EventObject, Machine } from 'xstate';
+import { assign, EventObject, Machine, StateConfig } from 'xstate';
 import { useMachine } from '@xstate/react';
 import { Box, Color, render, Text } from 'ink';
 import SelectInput, { Item } from 'ink-select-input';
-import React, { useEffect, useState } from 'react';
+import React, { ReactElement, useEffect, useRef, useState } from 'react';
 // @ts-ignore
 import ProgressBar from 'ink-progress-bar';
 // @ts-ignore
@@ -13,6 +13,31 @@ import BigText from 'ink-big-text';
 // @ts-ignore
 import { UncontrolledTextInput } from 'ink-text-input';
 import { formatMillis, formatTime, getProgress, PomodoroContext } from './lib';
+import { useDebouncedCallback } from 'use-debounce';
+import winston, { format } from 'winston';
+import { parse, stringify } from 'flatted';
+
+const logger = winston.createLogger({
+  level: 'debug',
+  format: winston.format.combine(
+    winston.format.timestamp({
+      format: 'YYYY-MM-DD HH:mm:ss.SSS',
+    }),
+    format.splat(),
+    format.printf(info => {
+      return `${info.timestamp} ${info.message}`;
+    }),
+  ),
+  transports: [
+    new winston.transports.File({
+      filename: 'debug.log',
+      level: 'debug',
+      handleExceptions: true,
+    }),
+  ],
+});
+
+logger.debug('#### new run ####');
 
 const busylight = getBusylight();
 
@@ -109,7 +134,7 @@ const pomodoroMachine = Machine<PomodoroContext, EventObject>(
     },
     actions: {
       setStartTime: assign({
-        startTime: (context, event) => new Date(),
+        startTime: (_context, _event) => Date.now(),
       }),
     },
   },
@@ -222,33 +247,61 @@ const Header = ({
   );
 };
 
+function usePrevious<T>(value: T): T | undefined {
+  const ref = useRef<undefined | T>();
+  useEffect(() => {
+    ref.current = value;
+  });
+  return ref.current;
+}
+
+interface PersistState {
+  meetings: Meeting[];
+  meetingState: StateConfig<{}, EventObject> | undefined;
+  pomodoroState: StateConfig<PomodoroContext, EventObject> | undefined;
+}
+
 function usePersistedState<T>(
   initialState: T,
   path: string,
-): [T, (state: T) => void, Error | undefined] {
-  const [state, setState] = useState(initialState);
+): [T | 'loading', (state: Partial<T>) => void, Error | undefined] {
+  const [state, setState] = useState<T | 'loading'>('loading');
   const [error, setError] = useState<Error | undefined>(undefined);
 
   useEffect(() => {
     (async () => {
       try {
-        const storedState = await fs.readJSON(path);
-        setState(storedState);
+        if (await fs.pathExists(path)) {
+          const storedState = parse(await fs.readFile(path, 'UTF-8'));
+          setState(storedState);
+        } else {
+          setState(initialState);
+        }
       } catch (e) {
         setError(e);
       }
     })();
   }, []);
-  async function storeState(newState: T) {
-    setState(newState);
+
+  const [writeState] = useDebouncedCallback(async () => {
+    logger.debug(`Wrote: %s`, stringify(state));
     try {
-      await fs.writeJSON(path, newState);
+      await fs.writeFile(path, stringify(state));
     } catch (e) {
       setError(e);
     }
+  }, 200);
+
+  async function setAndWriteState(newStateSlice: Partial<T>) {
+    const newState = {
+      ...(state === 'loading' ? initialState : state),
+      ...newStateSlice,
+    };
+    setState(newState);
+    await writeState();
   }
 
-  return [state, storeState, error];
+  return [state, setAndWriteState, error];
 }
 
 const useMeetings = ({
@@ -378,33 +431,80 @@ const ConfigMeetings = ({
   );
 };
 
-const PomodoroTimer = () => {
+interface PomodoroStateRenderProps {
+  persistedState: PersistState;
+  setPersistedState: (state: Partial<PersistState>) => void;
+  persistError: Error | undefined;
+}
+
+const PomodoroTimer = ({
+  persistedState,
+  setPersistedState,
+  persistError,
+}: PomodoroStateRenderProps): ReactElement => {
   const currentTime = useTime();
-  const [pomodoroMachineState, sendPomodoro] = useMachine(pomodoroMachine);
-  const [meetingMachineState, sendMeeting] = useMachine(meetingMachine);
+  const [pomodoroMachineState, sendPomodoro] = useMachine(pomodoroMachine, {
+    state: {
+      ...persistedState.pomodoroState,
+      configuration: [],
+    } as StateConfig<PomodoroContext, EventObject>,
+  });
+
+  const [meetingMachineState, sendMeeting] = useMachine(meetingMachine, {
+    state: { ...persistedState.meetingState, configuration: [] } as StateConfig<
+      {},
+      EventObject
+    >,
+  });
+
   const { context, nextEvents: pomodoroNextEvents } = pomodoroMachineState;
   const { nextEvents: meetingNextEvents } = meetingMachineState;
 
   const nextEvents = [...pomodoroNextEvents, ...meetingNextEvents];
-  const state = pomodoroMachineState.value.toString();
+  const pomodoroState = pomodoroMachineState.value.toString();
+  const previousPomodoroState = usePrevious(pomodoroState);
   const meetingState = meetingMachineState.value.toString();
+  const previousMeetingState = usePrevious(meetingState);
 
   useEffect(() => {
-    if (state === 'exit') {
+    logger.debug('persistedState changed %s', stringify(persistedState));
+  }, [persistedState]);
+
+  useEffect(() => {
+    logger.debug(
+      'pomodoroState changed %s => %s',
+      previousPomodoroState,
+      pomodoroState,
+    );
+    setPersistedState({
+      pomodoroState: pomodoroMachineState,
+    });
+  }, [pomodoroState]);
+
+  useEffect(() => {
+    logger.debug(
+      'meetingState changed %s => %s ',
+      previousMeetingState,
+      meetingState,
+    );
+    setPersistedState({
+      meetingState: meetingMachineState,
+    });
+  }, [meetingState]);
+
+  useEffect(() => {
+    if (pomodoroState === 'exit') {
       unmount();
     }
-  }, [state]);
+  }, [pomodoroState]);
 
   const progress = getProgress({
-    state,
+    state: pomodoroState,
     context,
     currentTime,
   });
 
-  const [meetings, setMeetings, meetingError] = usePersistedState<Meeting[]>(
-    [],
-    `${process.env.HOME}/.pomodoro.json`,
-  );
+  const { meetings } = persistedState;
 
   useEffect(() => {
     if (progress && progress.percent <= 0) {
@@ -416,7 +516,7 @@ const PomodoroTimer = () => {
 
   useEffect(() => {
     if (currentTime > meetings[0]) {
-      setMeetings(meetings.slice(1));
+      setPersistedState({ meetings: meetings.slice(1) });
       sendMeeting({
         type: 'MEETING',
       });
@@ -429,26 +529,28 @@ const PomodoroTimer = () => {
       <Header
         currentTime={currentTime}
         mode={
-          state === 'work' || state === 'break' || state === 'meeting'
+          pomodoroState === 'work' ||
+          pomodoroState === 'break' ||
+          pomodoroState === 'meeting'
             ? 'progress'
             : 'blinking'
         }
         color={
-          state === 'work' || state === 'breakFinished'
+          pomodoroState === 'work' || pomodoroState === 'breakFinished'
             ? workColor
-            : state === 'break' || state === 'workFinished'
+            : pomodoroState === 'break' || pomodoroState === 'workFinished'
             ? breakColor
             : meetingState === 'meeting' || meetingState === 'configMeetings'
             ? meetingColor
             : idleColor
         }
       />
-      <Text>{formatMeetings(meetings, currentTime, meetingError)}</Text>
+      <Text>{formatMeetings(meetings, currentTime, persistError)}</Text>
       {meetingState === 'configMeetings' ? (
         <ConfigMeetings
           meetings={meetings}
           onChangeMeetings={meetings => {
-            setMeetings(meetings);
+            setPersistedState({ meetings });
           }}
           onDone={() => {
             sendMeeting({
@@ -459,7 +561,7 @@ const PomodoroTimer = () => {
       ) : (
         <>
           {progress && (
-            <Color keyword={state === 'work' ? workColor : breakColor}>
+            <Color keyword={pomodoroState === 'work' ? workColor : breakColor}>
               <Box>
                 <Box marginRight={1}>{timePassedText}</Box>
                 <ProgressBar
@@ -495,4 +597,34 @@ const PomodoroTimer = () => {
   );
 };
 
-const { unmount } = render(<PomodoroTimer />);
+const PomodoroState = ({
+  children,
+}: {
+  children: ({
+    persistedState,
+    setPersistedState,
+    persistError,
+  }: PomodoroStateRenderProps) => ReactElement;
+}): ReactElement => {
+  const [persistedState, setPersistedState, persistError] = usePersistedState<
+    PersistState
+  >(
+    {
+      meetings: [],
+      pomodoroState: undefined,
+      meetingState: undefined,
+    },
+    `${process.env.HOME}/.pomodoro.json`,
+  );
+
+  if (persistedState === 'loading') {
+    return <Text>Loading state from file...</Text>;
+  }
+  return children({ persistedState, setPersistedState, persistError });
+};
+
+const { unmount } = render(
+  <PomodoroState>
+    {renderProps => <PomodoroTimer {...renderProps} />}
+  </PomodoroState>,
+);

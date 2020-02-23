@@ -23,7 +23,7 @@ export function formatTime(date: Date) {
 export interface PomodoroContext {
   workDuration: number;
   breakDuration: number;
-  startTime?: Date;
+  startTime?: number;
 }
 
 export function getProgress({
@@ -38,7 +38,7 @@ export function getProgress({
   if (state === "work" || state === "break") {
     const duration = state === "work" ? workDuration : breakDuration;
     if (startTime) {
-      const difference = currentTime - startTime.getTime();
+      const difference = currentTime - startTime;
       const minutesPassed = difference / MINUTE;
       return {
         millis: duration * MINUTE - difference,

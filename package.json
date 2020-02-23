@@ -4,7 +4,8 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "dev": "nodemon --no-stdin -e ts,tsx,js,json -x ts-node app.tsx",
+    "dev:watch": "NODE_ENV=production nodemon --no-stdin -e ts,tsx,js,json -x ts-node app.tsx",
+    "dev": "NODE_ENV=production ts-node app.tsx",
     "build": "tsc",
     "start": "node dist/app.js",
     "test": "echo \"Error: no test specified\" && exit 1"
@@ -26,13 +27,17 @@
     "prettier": "^1.19.1",
     "prompts": "^2.3.0",
     "react": "^16.12.0",
+    "robot3": "^0.2.11",
     "ts-jest": "^25.2.1",
     "ts-node": "^8.6.2",
     "typescript": "^3.7.5",
+    "use-debounce": "^3.3.0",
+    "winston": "^3.2.1",
     "xstate": "^4.7.6"
   },
   "dependencies": {
     "@xstate/react": "^0.8.1",
+    "flatted": "^2.0.1",
     "fs-extra": "^8.1.0",
     "ink-big-text": "^1.0.1",
     "ink-progress-bar": "^3.0.0",
