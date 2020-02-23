@@ -1,11 +1,11 @@
 import fs from 'fs-extra';
 // @ts-ignore
 import { get as getBusylight } from 'busylight';
-import { assign, EventObject, Machine, StateConfig } from 'xstate';
+import { assign, EventObject, Machine } from 'xstate';
 import { useMachine } from '@xstate/react';
 import { Box, Color, render, Text } from 'ink';
 import SelectInput, { Item } from 'ink-select-input';
-import React, { ReactElement, useEffect, useRef, useState } from 'react';
+import React, { ReactElement, useEffect, useState } from 'react';
 // @ts-ignore
 import ProgressBar from 'ink-progress-bar';
 // @ts-ignore
@@ -15,10 +15,8 @@ import { UncontrolledTextInput } from 'ink-text-input';
 import { formatMillis, formatTime, getProgress, PomodoroContext } from './lib';
 import { useDebouncedCallback } from 'use-debounce';
 import winston, { format } from 'winston';
-import { parse, stringify } from 'flatted';
 
 const logger = winston.createLogger({
-  level: 'debug',
   format: winston.format.combine(
     winston.format.timestamp({
       format: 'YYYY-MM-DD HH:mm:ss.SSS',
@@ -30,14 +28,14 @@ const logger = winston.createLogger({
   ),
   transports: [
     new winston.transports.File({
-      filename: 'debug.log',
-      level: 'debug',
+      filename: 'error.log',
+      level: 'error',
       handleExceptions: true,
     }),
   ],
 });
 
-logger.debug('#### new run ####');
+logger.debug('#### started pomodoro timer ####');
 
 const busylight = getBusylight();
 
@@ -74,6 +72,7 @@ const pomodoroMachine = Machine<PomodoroContext, EventObject>(
           STOP: 'idle',
         },
         entry: 'setStartTime',
+        exit: 'removeStartTime',
         activities: 'setBusylight',
       },
       workFinished: {
@@ -89,6 +88,7 @@ const pomodoroMachine = Machine<PomodoroContext, EventObject>(
           STOP: 'idle',
         },
         entry: 'setStartTime',
+        exit: 'removeStartTime',
         activities: 'setBreaklight',
       },
       breakFinished: {
@@ -134,7 +134,14 @@ const pomodoroMachine = Machine<PomodoroContext, EventObject>(
     },
     actions: {
       setStartTime: assign({
-        startTime: (_context, _event) => Date.now(),
+        startTime: (context, _event) => {
+          return context.startTime || Date.now();
+        },
+      }),
+      removeStartTime: assign({
+        startTime: (_context, _event) => {
+          return undefined;
+        },
       }),
     },
   },
@@ -247,18 +254,9 @@ const Header = ({
   );
 };
 
-function usePrevious<T>(value: T): T | undefined {
-  const ref = useRef<undefined | T>();
-  useEffect(() => {
-    ref.current = value;
-  });
-  return ref.current;
-}
-
 interface PersistState {
   meetings: Meeting[];
-  meetingState: StateConfig<{}, EventObject> | undefined;
-  pomodoroState: StateConfig<PomodoroContext, EventObject> | undefined;
+  pomodoroState: { state: string; context: PomodoroContext } | undefined;
 }
 
 function usePersistedState<T>(
@@ -272,22 +270,23 @@ function usePersistedState<T>(
     (async () => {
       try {
         if (await fs.pathExists(path)) {
-          const storedState = parse(await fs.readFile(path, 'UTF-8'));
+          const storedState = await fs.readJSON(path);
           setState(storedState);
         } else {
           setState(initialState);
         }
       } catch (e) {
+        logger.error('Error reading JSON', e);
         setError(e);
       }
     })();
   }, []);
 
   const [writeState] = useDebouncedCallback(async () => {
-    logger.debug(`Wrote: %s`, stringify(state));
     try {
-      await fs.writeFile(path, stringify(state));
+      await fs.writeJSON(path, state);
     } catch (e) {
+      logger.error('Error writing JSON', e);
       setError(e);
     }
   }, 200);
@@ -444,53 +443,51 @@ const PomodoroTimer = ({
 }: PomodoroStateRenderProps): ReactElement => {
   const currentTime = useTime();
   const [pomodoroMachineState, sendPomodoro] = useMachine(pomodoroMachine, {
-    state: {
-      ...persistedState.pomodoroState,
-      configuration: [],
-    } as StateConfig<PomodoroContext, EventObject>,
+    context: persistedState.pomodoroState?.context,
   });
 
-  const [meetingMachineState, sendMeeting] = useMachine(meetingMachine, {
-    state: { ...persistedState.meetingState, configuration: [] } as StateConfig<
-      {},
-      EventObject
-    >,
-  });
+  const [meetingMachineState, sendMeeting] = useMachine(meetingMachine, {});
 
   const { context, nextEvents: pomodoroNextEvents } = pomodoroMachineState;
   const { nextEvents: meetingNextEvents } = meetingMachineState;
 
   const nextEvents = [...pomodoroNextEvents, ...meetingNextEvents];
   const pomodoroState = pomodoroMachineState.value.toString();
-  const previousPomodoroState = usePrevious(pomodoroState);
+  // const previousContext = usePrevious(context);
   const meetingState = meetingMachineState.value.toString();
-  const previousMeetingState = usePrevious(meetingState);
 
   useEffect(() => {
-    logger.debug('persistedState changed %s', stringify(persistedState));
+    const state = persistedState.pomodoroState?.state;
+    if (state === 'work') {
+      sendPomodoro({
+        type: 'WORK',
+      });
+    }
+    if (state === 'break') {
+      sendPomodoro({
+        type: 'BREAK',
+      });
+    }
+  }, []);
+
+  useEffect(() => {
+    logger.debug('persistedState changed %o', persistedState);
   }, [persistedState]);
 
   useEffect(() => {
-    logger.debug(
-      'pomodoroState changed %s => %s',
-      previousPomodoroState,
-      pomodoroState,
-    );
-    setPersistedState({
-      pomodoroState: pomodoroMachineState,
-    });
+    if (pomodoroState === 'work' || pomodoroState === 'break') {
+      setPersistedState({
+        pomodoroState: {
+          state: pomodoroState,
+          context,
+        },
+      });
+    } else {
+      setPersistedState({
+        pomodoroState: undefined,
+      });
+    }
   }, [pomodoroState]);
-
-  useEffect(() => {
-    logger.debug(
-      'meetingState changed %s => %s ',
-      previousMeetingState,
-      meetingState,
-    );
-    setPersistedState({
-      meetingState: meetingMachineState,
-    });
-  }, [meetingState]);
 
   useEffect(() => {
     if (pomodoroState === 'exit') {
@@ -612,7 +609,6 @@ const PomodoroState = ({
     {
       meetings: [],
       pomodoroState: undefined,
-      meetingState: undefined,
     },
     `${process.env.HOME}/.pomodoro.json`,
   );
