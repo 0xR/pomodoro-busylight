@@ -5,7 +5,7 @@ import { assign, EventObject, Machine } from 'xstate';
 import { useMachine } from '@xstate/react';
 import { Box, Color, render, Text } from 'ink';
 import SelectInput, { Item } from 'ink-select-input';
-import React, { ReactElement, useEffect, useState } from 'react';
+import React, { ReactElement, useEffect, useRef, useState } from 'react';
 // @ts-ignore
 import ProgressBar from 'ink-progress-bar';
 // @ts-ignore
@@ -64,7 +64,6 @@ const pomodoroMachine = Machine<PomodoroContext, EventObject>(
           BREAK: 'break',
           EXIT: 'exit',
         },
-        activities: 'setIdleLight',
       },
       work: {
         on: {
@@ -73,14 +72,12 @@ const pomodoroMachine = Machine<PomodoroContext, EventObject>(
         },
         entry: 'setStartTime',
         exit: 'removeStartTime',
-        activities: 'setBusylight',
       },
       workFinished: {
         on: {
           BREAK: 'break',
           STOP: 'idle',
         },
-        activities: 'setReadyForBreakLight',
       },
       break: {
         on: {
@@ -89,20 +86,17 @@ const pomodoroMachine = Machine<PomodoroContext, EventObject>(
         },
         entry: 'setStartTime',
         exit: 'removeStartTime',
-        activities: 'setBreaklight',
       },
       breakFinished: {
         on: {
           WORK: 'work',
           STOP: 'idle',
         },
-        activities: 'setReadyForWorkLight',
       },
       configMeetings: {
         on: {
           STOP: 'idle',
         },
-        activities: 'setConfigMeetingLight',
       },
       exit: {
         type: 'final',
@@ -110,28 +104,6 @@ const pomodoroMachine = Machine<PomodoroContext, EventObject>(
     },
   },
   {
-    activities: {
-      setIdleLight: () => {
-        busylight.pulse(idleColor);
-        return () => busylight.off();
-      },
-      setReadyForWorkLight: () => {
-        busylight.pulse(workColor);
-        return () => busylight.off();
-      },
-      setBusylight: () => {
-        busylight.light(workColor);
-        return () => busylight.off();
-      },
-      setReadyForBreakLight: () => {
-        busylight.pulse(breakColor);
-        return () => busylight.off();
-      },
-      setBreaklight: () => {
-        busylight.light(breakColor);
-        return () => busylight.off();
-      },
-    },
     actions: {
       setStartTime: assign({
         startTime: (context, _event) => {
@@ -158,31 +130,16 @@ const meetingMachine = Machine<{}, EventObject>(
           CONFIGMEETINGS: 'configMeetings',
           MEETING: 'meeting',
         },
-        activities: 'setIdleLight',
       },
       configMeetings: {
         on: {
           STOP: 'idle',
         },
-        activities: 'setConfigMeetingLight',
       },
       meeting: {
         on: {
           STOP: 'idle',
         },
-        activities: 'setMeetingLight',
-      },
-    },
-  },
-  {
-    activities: {
-      setConfigMeetingLight: () => {
-        busylight.pulse(meetingColor);
-        return () => busylight.off();
-      },
-      setMeetingLight: () => {
-        busylight.light(meetingColor);
-        return () => busylight.off();
       },
     },
   },
@@ -430,10 +387,51 @@ const ConfigMeetings = ({
   );
 };
 
+function usePrevious<T>(value: T): T | undefined {
+  // The ref object is a generic container whose current property is mutable ...
+  // ... and can hold any value, similar to an instance property on a class
+  const ref = useRef<T | undefined>();
+
+  // Store current value in ref
+  useEffect(() => {
+    ref.current = value;
+  }, [value]); // Only re-run if value changes
+
+  // Return previous value (happens before update in useEffect above)
+  return ref.current;
+}
+
 interface PomodoroStateRenderProps {
   persistedState: PersistState;
   setPersistedState: (state: Partial<PersistState>) => void;
   persistError: Error | undefined;
+}
+
+function useColorInfo(pomodoroState: string, meetingState: string) {
+  const mode =
+    pomodoroState === 'work' ||
+    pomodoroState === 'break' ||
+    pomodoroState === 'meeting'
+      ? 'progress'
+      : 'blinking';
+  const color =
+    meetingState === 'meeting' || meetingState === 'configMeetings'
+      ? meetingColor
+      : pomodoroState === 'work' || pomodoroState === 'breakFinished'
+      ? workColor
+      : pomodoroState === 'break' || pomodoroState === 'workFinished'
+      ? breakColor
+      : idleColor;
+
+  const previousMode = usePrevious(mode);
+  const previousColor = usePrevious(color);
+
+  useEffect(() => {
+    if (previousMode !== mode || previousColor != color) {
+      busylight[mode === 'blinking' ? 'pulse' : 'light'](color);
+    }
+  }, [mode, color]);
+  return { mode, color };
 }
 
 const PomodoroTimer = ({
@@ -453,7 +451,6 @@ const PomodoroTimer = ({
 
   const nextEvents = [...pomodoroNextEvents, ...meetingNextEvents];
   const pomodoroState = pomodoroMachineState.value.toString();
-  // const previousContext = usePrevious(context);
   const meetingState = meetingMachineState.value.toString();
 
   useEffect(() => {
@@ -521,27 +518,10 @@ const PomodoroTimer = ({
   }, [currentTime, meetings[0]]);
 
   const timePassedText = progress ? formatMillis(progress.millis) : '';
+  const { mode, color } = useColorInfo(pomodoroState, meetingState);
   return (
     <>
-      <Header
-        currentTime={currentTime}
-        mode={
-          pomodoroState === 'work' ||
-          pomodoroState === 'break' ||
-          pomodoroState === 'meeting'
-            ? 'progress'
-            : 'blinking'
-        }
-        color={
-          pomodoroState === 'work' || pomodoroState === 'breakFinished'
-            ? workColor
-            : pomodoroState === 'break' || pomodoroState === 'workFinished'
-            ? breakColor
-            : meetingState === 'meeting' || meetingState === 'configMeetings'
-            ? meetingColor
-            : idleColor
-        }
-      />
+      <Header currentTime={currentTime} mode={mode} color={color} />
       <Text>{formatMeetings(meetings, currentTime, persistError)}</Text>
       {meetingState === 'configMeetings' ? (
         <ConfigMeetings
