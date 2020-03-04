@@ -5,7 +5,13 @@ import { assign, EventObject, Machine } from 'xstate';
 import { useMachine } from '@xstate/react';
 import { Box, Color, render, Text } from 'ink';
 import SelectInput, { Item } from 'ink-select-input';
-import React, { ReactElement, useEffect, useRef, useState } from 'react';
+import React, {
+  ReactElement,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 // @ts-ignore
 import ProgressBar from 'ink-progress-bar';
 // @ts-ignore
@@ -23,7 +29,9 @@ const logger = winston.createLogger({
     }),
     format.splat(),
     format.printf(info => {
-      return `${info.timestamp} ${info.message}`;
+      return `${info.timestamp} ${info.message}${
+        info.error ? ' ' + info.error.stack : ''
+      }`;
     }),
   ),
   transports: [
@@ -35,16 +43,15 @@ const logger = winston.createLogger({
   ],
 });
 
-logger.debug('#### started pomodoro timer ####');
-
-const busylight = getBusylight();
-
-const blinkingRate = 500;
-busylight.defaults({
-  rate: blinkingRate,
+process.on('unhandledRejection', (reason, promise) => {
+  logger.debug('Unhandled rejection', { error: reason });
 });
 
+logger.debug('#### started pomodoro timer ####');
+
 const debug = process.env.npm_lifecyle_event === 'dev';
+
+const blinkingRate = 500;
 
 const workColor = 'red';
 const breakColor = 'green';
@@ -119,31 +126,29 @@ const pomodoroMachine = Machine<PomodoroContext, EventObject>(
   },
 );
 
-const meetingMachine = Machine<{}, EventObject>(
-  {
-    id: 'meeting',
-    initial: 'idle',
-    strict: true,
-    states: {
-      idle: {
-        on: {
-          CONFIGMEETINGS: 'configMeetings',
-          MEETING: 'meeting',
-        },
+const meetingMachine = Machine<{}, EventObject>({
+  id: 'meeting',
+  initial: 'idle',
+  strict: true,
+  states: {
+    idle: {
+      on: {
+        CONFIGMEETINGS: 'configMeetings',
+        MEETING: 'meeting',
       },
-      configMeetings: {
-        on: {
-          STOP: 'idle',
-        },
+    },
+    configMeetings: {
+      on: {
+        STOP: 'idle',
       },
-      meeting: {
-        on: {
-          STOP: 'idle',
-        },
+    },
+    meeting: {
+      on: {
+        STOP: 'idle',
       },
     },
   },
-);
+});
 
 const useTime = () => {
   const [time, setTime] = useState<number>(Date.now());
@@ -178,13 +183,15 @@ function formatMeetings(
   }`;
 }
 
+type Mode = 'blinking' | 'progress';
+
 const Header = ({
   currentTime,
   mode,
   color,
 }: {
   currentTime: number;
-  mode: 'blinking' | 'progress';
+  mode: Mode;
   color: string;
 }) => {
   const texts = ['PO', 'MO', 'DO', 'RO'];
@@ -242,6 +249,7 @@ function usePersistedState<T>(
   const [writeState] = useDebouncedCallback(async () => {
     try {
       await fs.writeJSON(path, state);
+      logger.debug('persistedState written %o', state);
     } catch (e) {
       logger.error('Error writing JSON', e);
       setError(e);
@@ -406,8 +414,33 @@ interface PomodoroStateRenderProps {
   setPersistedState: (state: Partial<PersistState>) => void;
   persistError: Error | undefined;
 }
+interface ColorInfo {
+  mode: Mode;
+  color: string;
+}
+function useColorInfo(pomodoroState: string, meetingState: string): ColorInfo {
+  const busylight = useMemo(() => {
+    const newBusylight = getBusylight();
+    busylight.defaults({
+      rate: blinkingRate,
+    });
 
-function useColorInfo(pomodoroState: string, meetingState: string) {
+    return newBusylight;
+  }, []);
+  const [connectCount, setConnectCount] = useState(0);
+  const [updateConnectCount] = useDebouncedCallback(setConnectCount, 200);
+  useEffect(() => {
+    // @ts-ignore
+    const listener = () => {
+      logger.debug('Busylight connected');
+      updateConnectCount(connectCount + 1);
+    };
+    busylight.on('connected', listener);
+    return () => {
+      busylight.off('connected', listener);
+    };
+  }, [busylight, connectCount]);
+
   const mode =
     pomodoroState === 'work' ||
     pomodoroState === 'break' ||
@@ -423,14 +456,10 @@ function useColorInfo(pomodoroState: string, meetingState: string) {
       ? breakColor
       : idleColor;
 
-  const previousMode = usePrevious(mode);
-  const previousColor = usePrevious(color);
-
   useEffect(() => {
-    if (previousMode !== mode || previousColor != color) {
-      busylight[mode === 'blinking' ? 'pulse' : 'light'](color);
-    }
-  }, [mode, color]);
+    logger.debug('setting busylight %s, %s, %d', mode, color, connectCount);
+    busylight[mode === 'blinking' ? 'pulse' : 'light'](color);
+  }, [mode, color, connectCount]);
   return { mode, color };
 }
 
@@ -468,10 +497,6 @@ const PomodoroTimer = ({
   }, []);
 
   useEffect(() => {
-    logger.debug('persistedState changed %o', persistedState);
-  }, [persistedState]);
-
-  useEffect(() => {
     if (pomodoroState === 'work' || pomodoroState === 'break') {
       setPersistedState({
         pomodoroState: {
@@ -488,7 +513,7 @@ const PomodoroTimer = ({
 
   useEffect(() => {
     if (pomodoroState === 'exit') {
-      unmount();
+      // unmount();
     }
   }, [pomodoroState]);
 
@@ -604,3 +629,11 @@ const { unmount } = render(
     {renderProps => <PomodoroTimer {...renderProps} />}
   </PomodoroState>,
 );
+
+// (async function() {
+//   busylight.light('red');
+//
+//   await new Promise(resolve => {
+//     setTimeout(resolve, 1e8);
+//   });
+// })();
