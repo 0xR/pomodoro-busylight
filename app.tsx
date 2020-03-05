@@ -5,13 +5,7 @@ import { assign, EventObject, Machine } from 'xstate';
 import { useMachine } from '@xstate/react';
 import { Box, Color, render, Text } from 'ink';
 import SelectInput, { Item } from 'ink-select-input';
-import React, {
-  ReactElement,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from 'react';
+import React, { ReactElement, useEffect, useMemo, useRef, useState, } from 'react';
 // @ts-ignore
 import ProgressBar from 'ink-progress-bar';
 // @ts-ignore
@@ -36,8 +30,8 @@ const logger = winston.createLogger({
   ),
   transports: [
     new winston.transports.File({
-      filename: 'error.log',
-      level: 'error',
+      filename: 'debug.log',
+      level: 'debug',
       handleExceptions: true,
     }),
   ],
@@ -419,28 +413,24 @@ interface ColorInfo {
   color: string;
 }
 function useColorInfo(pomodoroState: string, meetingState: string): ColorInfo {
+  const [connectCount, setConnectCount] = useState(0);
   const busylight = useMemo(() => {
     const newBusylight = getBusylight();
-    busylight.defaults({
+    newBusylight.defaults({
       rate: blinkingRate,
+    });
+
+    newBusylight.on('disconnected', (error: Error) => {
+      logger.debug('Busylight disconnected', { error });
+    });
+
+    newBusylight.on('connected', () => {
+      logger.debug('Busylight connected');
+      setConnectCount(currentConnectCount => currentConnectCount + 1);
     });
 
     return newBusylight;
   }, []);
-  const [connectCount, setConnectCount] = useState(0);
-  const [updateConnectCount] = useDebouncedCallback(setConnectCount, 200);
-  useEffect(() => {
-    // @ts-ignore
-    const listener = () => {
-      logger.debug('Busylight connected');
-      updateConnectCount(connectCount + 1);
-    };
-    busylight.on('connected', listener);
-    return () => {
-      busylight.off('connected', listener);
-    };
-  }, [busylight, connectCount]);
-
   const mode =
     pomodoroState === 'work' ||
     pomodoroState === 'break' ||
