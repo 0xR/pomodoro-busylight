@@ -5,7 +5,13 @@ import { assign, EventObject, Machine } from 'xstate';
 import { useMachine } from '@xstate/react';
 import { Box, Color, render, Text } from 'ink';
 import SelectInput, { Item } from 'ink-select-input';
-import React, { ReactElement, useEffect, useMemo, useRef, useState, } from 'react';
+import React, {
+  ReactElement,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 // @ts-ignore
 import ProgressBar from 'ink-progress-bar';
 // @ts-ignore
@@ -133,12 +139,12 @@ const meetingMachine = Machine<{}, EventObject>({
     },
     configMeetings: {
       on: {
-        STOP: 'idle',
+        STOPMEETING: 'idle',
       },
     },
     meeting: {
       on: {
-        STOP: 'idle',
+        STOPMEETING: 'idle',
       },
     },
   },
@@ -468,7 +474,6 @@ const PomodoroTimer = ({
   const { context, nextEvents: pomodoroNextEvents } = pomodoroMachineState;
   const { nextEvents: meetingNextEvents } = meetingMachineState;
 
-  const nextEvents = [...pomodoroNextEvents, ...meetingNextEvents];
   const pomodoroState = pomodoroMachineState.value.toString();
   const meetingState = meetingMachineState.value.toString();
 
@@ -546,7 +551,7 @@ const PomodoroTimer = ({
           }}
           onDone={() => {
             sendMeeting({
-              type: 'STOP',
+              type: 'STOPMEETING',
             });
           }}
         />
@@ -564,15 +569,27 @@ const PomodoroTimer = ({
             </Color>
           )}
           <SelectInput
-            items={nextEvents
-              .filter(eventType => eventType !== 'FINISHED')
-              .filter(eventType => eventType !== 'MEETING')
-              .map(eventType => ({
-                label: `Go to ${eventType}`,
+            items={[
+              ...pomodoroNextEvents.map(eventType => ({
+                eventType,
+                machine: 'Pomodoro',
+              })),
+              ...meetingNextEvents.map(eventType => ({
+                eventType,
+                machine: `meeting`,
+              })),
+            ]
+              .filter(({ eventType }) => eventType !== 'FINISHED')
+              .filter(({ eventType }) => eventType !== 'MEETING')
+              .map(({ eventType, machine }) => ({
+                label: `${machine}: Go to ${eventType}`,
                 value: eventType,
               }))}
             onSelect={(item: Item) => {
-              if (item.value === 'CONFIGMEETINGS') {
+              if (
+                item.value === 'CONFIGMEETINGS' ||
+                item.value === 'STOPMEETING'
+              ) {
                 sendMeeting({
                   type: item.value.toString(),
                 });
