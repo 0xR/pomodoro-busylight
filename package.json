@@ -7,7 +7,7 @@
     "dev:watch": "NODE_ENV=production nodemon --no-stdin -e ts,tsx,js,json -x ts-node app.tsx",
     "dev": "NODE_ENV=production ts-node app.tsx",
     "build": "tsc",
-    "start": "node dist/app.js",
+    "start": "NODE_ENV=production node dist/app.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
