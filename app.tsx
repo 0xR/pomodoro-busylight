@@ -58,6 +58,10 @@ const breakColor = 'green';
 const meetingColor = 'blue';
 const idleColor = 'orange';
 
+function getLunchtime() {
+  return new Date().setHours(11, 57, 0, 0);
+}
+
 const pomodoroMachine = Machine<PomodoroContext, EventObject>(
   {
     id: 'pomodoro',
@@ -220,6 +224,7 @@ const Header = ({
 
 interface PersistState {
   meetings: Meeting[];
+  ignoreLunchBefore: number;
   pomodoroState: { state: string; context: PomodoroContext } | undefined;
 }
 
@@ -426,10 +431,12 @@ function useColorInfo(pomodoroState: string, meetingState: string): ColorInfo {
       rate: blinkingRate,
     });
 
+    // @ts-ignore
     newBusylight.on('disconnected', (error: Error) => {
       logger.debug('Busylight disconnected', { error });
     });
 
+    // @ts-ignore
     newBusylight.on('connected', () => {
       logger.debug('Busylight connected');
       setConnectCount(currentConnectCount => currentConnectCount + 1);
@@ -518,7 +525,7 @@ const PomodoroTimer = ({
     currentTime,
   });
 
-  const { meetings } = persistedState;
+  const { meetings, ignoreLunchBefore } = persistedState;
 
   useEffect(() => {
     if (progress && progress.percent <= 0) {
@@ -529,8 +536,13 @@ const PomodoroTimer = ({
   }, [progress]);
 
   useEffect(() => {
-    if (currentTime > meetings[0]) {
-      setPersistedState({ meetings: meetings.slice(1) });
+    const meetingStarted = currentTime > meetings[0];
+    const lunchFinished = currentTime > ignoreLunchBefore;
+    const lunchStarted = !lunchFinished && currentTime > getLunchtime();
+    if (meetingStarted || lunchStarted) {
+      if (meetingStarted) {
+        setPersistedState({ meetings: meetings.slice(1) });
+      }
       sendMeeting({
         type: 'MEETING',
       });
@@ -590,6 +602,11 @@ const PomodoroTimer = ({
                 item.value === 'CONFIGMEETINGS' ||
                 item.value === 'STOPMEETING'
               ) {
+                if (item.value === 'STOPMEETING') {
+                  setPersistedState({
+                    ignoreLunchBefore: Date.now(),
+                  });
+                }
                 sendMeeting({
                   type: item.value.toString(),
                 });
@@ -620,6 +637,7 @@ const PomodoroState = ({
   >(
     {
       meetings: [],
+      ignoreLunchBefore: Date.now(),
       pomodoroState: undefined,
     },
     `${process.env.HOME}/.pomodoro.json`,
