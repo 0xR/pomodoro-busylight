@@ -52,12 +52,15 @@ const breakColor = 'green';
 const meetingColor = 'blue';
 const idleColor = 'orange';
 
-function getNextDailyMeeting(ignoreDailyBefore: number) {
-  const dailyMeetings =  [
+function getDailyMeetings() {
+  return [
     new Date().setHours(9,43,0,0),
     new Date().setHours(11,57,0,0)
-  ].sort();
-  return dailyMeetings.find(meeting => meeting > ignoreDailyBefore);
+  ];
+}
+
+function getNextDailyMeeting(ignoreDailyBefore: number) {
+  return getDailyMeetings().sort().find(meeting => meeting > ignoreDailyBefore);
 }
 
 const pomodoroMachine = Machine<PomodoroContext, EventObject>(
@@ -171,7 +174,9 @@ function formatMeetings(
   currentTime: number,
   meetingError: Error | undefined,
 ) {
-  const formattedMeetings = meetings.map(m => {
+  const formattedMeetings = [...meetings].sort()
+    .filter(meeting => meeting > currentTime)
+    .map(m => {
     const meetingDate = new Date(m);
     return `${formatMillis(m - currentTime)} (${formatTime(meetingDate)})`;
   });
@@ -536,9 +541,11 @@ const PomodoroTimer = ({
   }, [progress]);
 
   useEffect(() => {
-    const meetingStarted = currentTime > meetings[0];
     const nextDailyMeeting = getNextDailyMeeting(ignoreDailyMeetingsBefore);
     const dailyMeetingStarted = nextDailyMeeting ? currentTime > nextDailyMeeting : false;
+
+    const meetingStarted = currentTime > meetings[0];
+
     if (meetingStarted || dailyMeetingStarted) {
       if (meetingStarted) {
         setPersistedState({ meetings: meetings.slice(1) });
@@ -554,7 +561,7 @@ const PomodoroTimer = ({
   return (
     <>
       <Header currentTime={currentTime} mode={mode} color={color} />
-      <Text>{formatMeetings(meetings, currentTime, persistError)}</Text>
+      <Text>{formatMeetings([...meetings, ...getDailyMeetings()], currentTime, persistError)}</Text>
       {meetingState === 'configMeetings' ? (
         <ConfigMeetings
           meetings={meetings}
