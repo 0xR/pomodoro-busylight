@@ -5,13 +5,7 @@ import { assign, EventObject, Machine } from 'xstate';
 import { useMachine } from '@xstate/react';
 import { Box, Color, render, Text } from 'ink';
 import SelectInput, { Item } from 'ink-select-input';
-import React, {
-  ReactElement,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from 'react';
+import React, { ReactElement, useEffect, useMemo, useRef, useState, } from 'react';
 // @ts-ignore
 import ProgressBar from 'ink-progress-bar';
 // @ts-ignore
@@ -58,8 +52,12 @@ const breakColor = 'green';
 const meetingColor = 'blue';
 const idleColor = 'orange';
 
-function getLunchtime() {
-  return new Date().setHours(11, 57, 0, 0);
+function getNextDailyMeeting(ignoreDailyBefore: number) {
+  const dailyMeetings =  [
+    new Date().setHours(9,43,0,0),
+    new Date().setHours(11,57,0,0)
+  ].sort();
+  return dailyMeetings.find(meeting => meeting > ignoreDailyBefore);
 }
 
 const pomodoroMachine = Machine<PomodoroContext, EventObject>(
@@ -224,7 +222,7 @@ const Header = ({
 
 interface PersistState {
   meetings: Meeting[];
-  ignoreLunchBefore: number;
+  ignoreDailyMeetingsBefore: number;
   pomodoroState: { state: string; context: PomodoroContext } | undefined;
 }
 
@@ -240,7 +238,9 @@ function usePersistedState<T>(
       try {
         if (await fs.pathExists(path)) {
           const storedState = await fs.readJSON(path);
-          setState(storedState);
+          setState({
+            ...initialState,
+            ...storedState });
         } else {
           setState(initialState);
         }
@@ -525,7 +525,7 @@ const PomodoroTimer = ({
     currentTime,
   });
 
-  const { meetings, ignoreLunchBefore } = persistedState;
+  const { meetings, ignoreDailyMeetingsBefore } = persistedState;
 
   useEffect(() => {
     if (progress && progress.percent <= 0) {
@@ -537,9 +537,9 @@ const PomodoroTimer = ({
 
   useEffect(() => {
     const meetingStarted = currentTime > meetings[0];
-    const lunchFinished = currentTime > ignoreLunchBefore;
-    const lunchStarted = !lunchFinished && currentTime > getLunchtime();
-    if (meetingStarted || lunchStarted) {
+    const nextDailyMeeting = getNextDailyMeeting(ignoreDailyMeetingsBefore);
+    const dailyMeetingStarted = nextDailyMeeting ? currentTime > nextDailyMeeting : false;
+    if (meetingStarted || dailyMeetingStarted) {
       if (meetingStarted) {
         setPersistedState({ meetings: meetings.slice(1) });
       }
@@ -604,7 +604,7 @@ const PomodoroTimer = ({
               ) {
                 if (item.value === 'STOPMEETING') {
                   setPersistedState({
-                    ignoreLunchBefore: Date.now(),
+                    ignoreDailyMeetingsBefore: Date.now(),
                   });
                 }
                 sendMeeting({
@@ -637,7 +637,7 @@ const PomodoroState = ({
   >(
     {
       meetings: [],
-      ignoreLunchBefore: Date.now(),
+      ignoreDailyMeetingsBefore: Date.now(),
       pomodoroState: undefined,
     },
     `${process.env.HOME}/.pomodoro.json`,
