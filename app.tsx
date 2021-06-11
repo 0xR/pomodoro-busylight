@@ -54,9 +54,8 @@ const idleColor = 'orange';
 
 function getDailyMeetings() {
   return [
-    new Date().setHours(9,28,0,0),
+    new Date().setHours(9,13,0,0),
     new Date().setHours(11,57,0,0)
-    new Date().setHours(15,57,0,0)
   ];
 }
 
