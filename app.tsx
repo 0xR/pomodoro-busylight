@@ -5,14 +5,26 @@ import { assign, EventObject, Machine } from 'xstate';
 import { useMachine } from '@xstate/react';
 import { Box, Color, render, Text } from 'ink';
 import SelectInput, { Item } from 'ink-select-input';
-import React, { ReactElement, useEffect, useMemo, useRef, useState, } from 'react';
+import React, {
+  ReactElement,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 // @ts-ignore
 import ProgressBar from 'ink-progress-bar';
 // @ts-ignore
 import BigText from 'ink-big-text';
 // @ts-ignore
 import { UncontrolledTextInput } from 'ink-text-input';
-import { formatMillis, formatTime, getProgress, PomodoroContext } from './lib';
+import {
+  alert,
+  formatMillis,
+  formatTime,
+  getProgress,
+  PomodoroContext,
+} from './lib';
 import { useDebouncedCallback } from 'use-debounce';
 import winston, { format } from 'winston';
 
@@ -53,14 +65,13 @@ const meetingColor = 'blue';
 const idleColor = 'orange';
 
 function getDailyMeetings() {
-  return [
-    new Date().setHours(9,13,0,0),
-    new Date().setHours(11,57,0,0)
-  ];
+  return [new Date().setHours(9, 13, 0, 0), new Date().setHours(11, 57, 0, 0)];
 }
 
 function getNextDailyMeeting(ignoreDailyBefore: number) {
-  return getDailyMeetings().sort().find(meeting => meeting > ignoreDailyBefore);
+  return getDailyMeetings()
+    .sort()
+    .find(meeting => meeting > ignoreDailyBefore);
 }
 
 const pomodoroMachine = Machine<PomodoroContext, EventObject>(
@@ -174,12 +185,13 @@ function formatMeetings(
   currentTime: number,
   meetingError: Error | undefined,
 ) {
-  const formattedMeetings = [...meetings].sort()
+  const formattedMeetings = [...meetings]
+    .sort()
     .filter(meeting => meeting > currentTime)
     .map(m => {
-    const meetingDate = new Date(m);
-    return `${formatMillis(m - currentTime)} (${formatTime(meetingDate)})`;
-  });
+      const meetingDate = new Date(m);
+      return `${formatMillis(m - currentTime)} (${formatTime(meetingDate)})`;
+    });
 
   const currentDate = new Date(currentTime);
 
@@ -245,7 +257,8 @@ function usePersistedState<T>(
           const storedState = await fs.readJSON(path);
           setState({
             ...initialState,
-            ...storedState });
+            ...storedState,
+          });
         } else {
           setState(initialState);
         }
@@ -542,11 +555,14 @@ const PomodoroTimer = ({
 
   useEffect(() => {
     const nextDailyMeeting = getNextDailyMeeting(ignoreDailyMeetingsBefore);
-    const dailyMeetingStarted = nextDailyMeeting ? currentTime > nextDailyMeeting : false;
+    const dailyMeetingStarted = nextDailyMeeting
+      ? currentTime > nextDailyMeeting
+      : false;
 
     const meetingStarted = currentTime > meetings[0];
 
     if (meetingStarted || dailyMeetingStarted) {
+      alert(`Meeting ${formatTime(new Date(meetings[0]))}`);
       if (meetingStarted) {
         setPersistedState({ meetings: meetings.slice(1) });
       }
@@ -561,7 +577,13 @@ const PomodoroTimer = ({
   return (
     <>
       <Header currentTime={currentTime} mode={mode} color={color} />
-      <Text>{formatMeetings([...meetings, ...getDailyMeetings()], currentTime, persistError)}</Text>
+      <Text>
+        {formatMeetings(
+          [...meetings, ...getDailyMeetings()],
+          currentTime,
+          persistError,
+        )}
+      </Text>
       {meetingState === 'configMeetings' ? (
         <ConfigMeetings
           meetings={meetings}
