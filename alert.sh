@@ -7,5 +7,5 @@ dimensions=$(xdpyinfo | awk '/dimensions/{print $2}')
 w=$(echo "$dimensions" | cut -f1 -dx); \
 h=$(echo "$dimensions" | cut -f2 -dx); \
 zenity --error \
---text "$1" \
---width=$w --height=$h &
+--text "<span size=\"xx-large\" weight=\"bold\">$1</span>" \
+--width="$w" --height="$h" &
