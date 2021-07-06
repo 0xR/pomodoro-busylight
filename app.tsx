@@ -1,6 +1,5 @@
 import fs from 'fs-extra';
 // @ts-ignore
-import { get as getBusylight } from 'busylight';
 import { assign, EventObject, Machine } from 'xstate';
 import { useMachine } from '@xstate/react';
 import { Box, Color, render, Text } from 'ink';
@@ -443,25 +442,6 @@ interface ColorInfo {
 }
 function useColorInfo(pomodoroState: string, meetingState: string): ColorInfo {
   const [connectCount, setConnectCount] = useState(0);
-  const busylight = useMemo(() => {
-    const newBusylight = getBusylight();
-    newBusylight.defaults({
-      rate: blinkingRate,
-    });
-
-    // @ts-ignore
-    newBusylight.on('disconnected', (error: Error) => {
-      logger.debug('Busylight disconnected', { error });
-    });
-
-    // @ts-ignore
-    newBusylight.on('connected', () => {
-      logger.debug('Busylight connected');
-      setConnectCount(currentConnectCount => currentConnectCount + 1);
-    });
-
-    return newBusylight;
-  }, []);
   const mode =
     pomodoroState === 'work' ||
     pomodoroState === 'break' ||
@@ -477,10 +457,6 @@ function useColorInfo(pomodoroState: string, meetingState: string): ColorInfo {
       ? breakColor
       : idleColor;
 
-  useEffect(() => {
-    logger.debug('setting busylight %s, %s, %d', mode, color, connectCount);
-    busylight[mode === 'blinking' ? 'pulse' : 'light'](color);
-  }, [mode, color, connectCount]);
   return { mode, color };
 }
 
@@ -683,11 +659,3 @@ const { unmount } = render(
     {renderProps => <PomodoroTimer {...renderProps} />}
   </PomodoroState>,
 );
-
-// (async function() {
-//   busylight.light('red');
-//
-//   await new Promise(resolve => {
-//     setTimeout(resolve, 1e8);
-//   });
-// })();
