@@ -561,7 +561,7 @@ const PomodoroTimer = ({
 
     const meetingStarted = currentTime > meetings[0];
 
-    if (meetingStarted || dailyMeetingStarted) {
+    if ((meetingStarted || dailyMeetingStarted) && meetingState !== 'meeting') {
       alert(`Meeting ${formatTime(new Date(meetings[0]))}`);
       if (meetingStarted) {
         setPersistedState({ meetings: meetings.slice(1) });
