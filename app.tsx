@@ -4,13 +4,7 @@ import { assign, EventObject, Machine } from 'xstate';
 import { useMachine } from '@xstate/react';
 import { Box, Color, render, Text } from 'ink';
 import SelectInput, { Item } from 'ink-select-input';
-import React, {
-  ReactElement,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from 'react';
+import React, { ReactElement, useEffect, useRef, useState } from 'react';
 // @ts-ignore
 import ProgressBar from 'ink-progress-bar';
 // @ts-ignore
@@ -537,9 +531,9 @@ const PomodoroTimer = ({
 
     const meetingStarted = currentTime > meetings[0];
 
-    if ((meetingStarted || dailyMeetingStarted) && meetingState !== 'meeting') {
-      alert(`Meeting ${formatTime(new Date(meetings[0]))}`);
+    if (meetingStarted || dailyMeetingStarted) {
       if (meetingStarted) {
+        alert(`Meeting ${formatTime(new Date(meetings[0]))}`);
         setPersistedState({ meetings: meetings.slice(1) });
       }
       sendMeeting({
