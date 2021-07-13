@@ -533,9 +533,14 @@ const PomodoroTimer = ({
 
     if (meetingStarted || dailyMeetingStarted) {
       if (meetingStarted) {
-        alert(`Meeting ${formatTime(new Date(meetings[0]))}`);
         setPersistedState({ meetings: meetings.slice(1) });
       }
+      if (dailyMeetingStarted) {
+        setPersistedState({
+          ignoreDailyMeetingsBefore: Date.now(),
+        });
+      }
+      alert(`Meeting ${formatTime(new Date(meetings[0]))}`);
       sendMeeting({
         type: 'MEETING',
       });
@@ -601,11 +606,6 @@ const PomodoroTimer = ({
                 item.value === 'CONFIGMEETINGS' ||
                 item.value === 'STOPMEETING'
               ) {
-                if (item.value === 'STOPMEETING') {
-                  setPersistedState({
-                    ignoreDailyMeetingsBefore: Date.now(),
-                  });
-                }
                 sendMeeting({
                   type: item.value.toString(),
                 });
