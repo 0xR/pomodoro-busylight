@@ -56,6 +56,10 @@ export function getProgress({
 }
 
 export async function alert(text: string) {
+  await exec(`bash alert.sh "${text}"`);
+}
+
+export async function alertWithSound(text: string) {
   await Promise.all([
     exec(`bash alert.sh "${text}"`),
     exec('mplayer electronic_buzzer.ogg'),

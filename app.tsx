@@ -13,6 +13,7 @@ import BigText from 'ink-big-text';
 import { UncontrolledTextInput } from 'ink-text-input';
 import {
   alert,
+  alertWithSound,
   formatMillis,
   formatTime,
   getProgress,
@@ -517,6 +518,7 @@ const PomodoroTimer = ({
 
   useEffect(() => {
     if (progress && progress.percent <= 0) {
+      alert(`${pomodoroState} finished`);
       sendPomodoro({
         type: 'FINISHED',
       });
@@ -540,7 +542,7 @@ const PomodoroTimer = ({
           ignoreDailyMeetingsBefore: Date.now(),
         });
       }
-      alert(`Meeting ${formatTime(new Date(meetings[0]))}`);
+      alertWithSound(`Meeting ${formatTime(new Date(meetings[0]))}`);
       sendMeeting({
         type: 'MEETING',
       });

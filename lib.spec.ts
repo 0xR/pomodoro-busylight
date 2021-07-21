@@ -1,4 +1,4 @@
-import { alert, formatTime } from './lib';
+import { alertWithSound, formatTime } from './lib';
 
 it('should format dates', () => {
   expect(formatTime(new Date(2020, 1, 1, 9, 9))).toMatchInlineSnapshot(
@@ -7,5 +7,5 @@ it('should format dates', () => {
 });
 
 it('should alert', async () => {
-  await alert('mock alert text');
+  await alertWithSound('mock alert text');
 });
