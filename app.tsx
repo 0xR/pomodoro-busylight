@@ -59,7 +59,7 @@ const meetingColor = 'blue';
 const idleColor = 'orange';
 
 function getDailyMeetings() {
-  return [new Date().setHours(9, 27, 0, 0), new Date().setHours(11, 57, 0, 0)];
+  return [new Date().setHours(15, 17, 0, 0), new Date().setHours(11, 57, 0, 0)];
 }
 
 function getNextDailyMeeting(ignoreDailyBefore: number) {
@@ -431,10 +431,12 @@ interface PomodoroStateRenderProps {
   setPersistedState: (state: Partial<PersistState>) => void;
   persistError: Error | undefined;
 }
+
 interface ColorInfo {
   mode: Mode;
   color: string;
 }
+
 function useColorInfo(pomodoroState: string, meetingState: string): ColorInfo {
   const [connectCount, setConnectCount] = useState(0);
   const mode =
