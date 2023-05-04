@@ -59,7 +59,7 @@ const meetingColor = 'blue';
 const idleColor = 'orange';
 
 function getDailyMeetings() {
-  return [new Date().setHours(15, 17, 0, 0), new Date().setHours(11, 57, 0, 0)];
+  return [new Date().setHours(9, 57, 0, 0), new Date().setHours(11, 57, 0, 0)];
 }
 
 function getNextDailyMeeting(ignoreDailyBefore: number) {
