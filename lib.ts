@@ -62,6 +62,6 @@ export async function alert(text: string) {
 export async function alertWithSound(text: string) {
   await Promise.all([
     exec(`bash alert.sh "${text}"`),
-    exec('mplayer electronic_buzzer.ogg'),
+    exec('play electronic_buzzer.ogg'),
   ]);
 }
